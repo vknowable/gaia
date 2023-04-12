@@ -1,20 +1,33 @@
-ARG IMG_TAG=latest
+# Go 1.18 is required for gaiad
+FROM golang:1.18-alpine AS build-env
 
-# Compile the gaiad binary
-FROM golang:1.18-alpine AS gaiad-builder
-WORKDIR /src/app/
+# Set up dependencies
+ENV PACKAGES build-base curl make git libc-dev bash gcc linux-headers eudev-dev python3
+
+# Set working directory for the build
+WORKDIR /go/src/github.com/vknowable/gaia
+
+# Install dependencies
+RUN apk add --update $PACKAGES
+RUN apk add linux-headers
+
+# Add source files
 COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
-ENV PACKAGES curl make git libc-dev bash gcc linux-headers eudev-dev python3
-RUN apk add --no-cache $PACKAGES
+
+# Make the binary
 RUN CGO_ENABLED=0 make install
 
-# Add to a distroless container
-FROM cgr.dev/chainguard/static:$IMG_TAG
-ARG IMG_TAG
-COPY --from=gaiad-builder /go/bin/gaiad /usr/local/bin/
-EXPOSE 26656 26657 1317 9090
-USER 0
+# Final image
+FROM alpine:3.17.0
 
-ENTRYPOINT ["gaiad", "start"]
+# Install ca-certificates
+RUN apk add --update ca-certificates jq curl
+WORKDIR /
+
+# Copy over binaries from the build-env
+COPY --from=build-env /go/bin/gaiad /usr/local/bin/gaiad
+
+# Run gaiad by default
+CMD ["gaiad"]
